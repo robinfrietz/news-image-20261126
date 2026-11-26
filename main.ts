@@ -36,4 +36,26 @@ if (size < 1 || size > MAX_BYTES) {
   throw new Error(`output size ${size} bytes outside 1-${MAX_BYTES} limit`);
 }
 
-console.log(`wrote ${target} (${size} bytes, verified byte-identical)`);
+// Additional integrity checks on the written PNG itself: the 8-byte PNG
+// signature must be present and the IHDR header must report dimensions
+// within the 1024x1024 bound this entry is built to. These guard against a
+// truncated or non-PNG file slipping through the byte-equality check above
+// if the source itself were ever corrupted.
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+if (written.length < 33 || !written.subarray(0, 8).equals(PNG_SIGNATURE)) {
+  throw new Error(`output is not a PNG: missing PNG signature in ${target}`);
+}
+if (written.subarray(12, 16).toString("ascii") !== "IHDR") {
+  throw new Error(`output is not a PNG: missing IHDR chunk in ${target}`);
+}
+const pngWidth = written.readUInt32BE(16);
+const pngHeight = written.readUInt32BE(20);
+if (pngWidth < 1 || pngWidth > 1024 || pngHeight < 1 || pngHeight > 1024) {
+  throw new Error(
+    `output PNG dimensions ${pngWidth}x${pngHeight} outside 1-1024 bound`,
+  );
+}
+
+console.log(
+  `wrote ${target} (${size} bytes, verified byte-identical, PNG ${pngWidth}x${pngHeight})`,
+);
